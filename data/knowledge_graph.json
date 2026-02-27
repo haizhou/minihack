@@ -1,0 +1,699 @@
+{
+  "graph": {
+    "agent": [
+      {
+        "relation": "can_pickup",
+        "target": "food ration"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "club"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "sling"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "key"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "dagger"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "flint stone"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "21 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "leather armor"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "gnome corpse"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "17 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "knife"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "29 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "25 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "27 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "elf corpse"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "22 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "26 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "28 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "23 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "human corpse"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "orange gem"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "11 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "rock"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "22 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "23 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "24 cursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "19 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "violet gem"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "leash"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "2 food rations"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "20 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "15 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "32 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "long sword"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "24 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "31 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "20 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "30 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "18 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "13 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "dwarf corpse"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "14 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "21 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "8 rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "candle"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "2 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "18 rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "16 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "24 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "pear"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "orc corpse"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "rusty dagger"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "tin opener"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "12 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "chest"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "bag"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "whistle"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "slime mold"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "candy bar"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "tinning kit"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "green gem"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "18 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "10 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "silver saber"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "can of grease"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "black gem"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "33 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "11 silver arrows"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "silver arrow"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "tin"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "25 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "19 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "tripe ration"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "yellowish brown gem"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "yellow gem"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "white gem"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "2 uncursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "crossbow"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "lembas wafer"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "red gem"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "blindfold"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "looking glass"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "carrot"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "egg"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "lock pick"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "16 cursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "7 runed arrows"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "9 throwing stars"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "26 cursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "2 tripe rations"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "11 rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "magic marker"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "angled poleaxe"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "boomerang"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "lamp"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "saddle"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "curved sword"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "spear"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "10 cursed darts"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "stethoscope"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "4 candles"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "8 bamboo arrows"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "hilted polearm"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "brass lantern"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "27 cursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "flail"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "26 uncursed flint stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "2 cream pies"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "glass orb"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "25 cursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "two-handed sword"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "6 crude arrows"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "10 crude arrows"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "war hammer"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "bell"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "towel"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "2 blue gems"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "gray stone"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "broad pick"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "2 gray stones"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "partly eaten tripe ration"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "lance"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "10 throwing stars"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "7 bamboo arrows"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "horn"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "22 cursed rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "10 rocks"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "double-headed axe"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "11 arrows"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "bow"
+      },
+      {
+        "relation": "can_pickup",
+        "target": "bugle"
+      }
+    ],
+    "door": [
+      {
+        "relation": "state_change",
+        "target": "open"
+      },
+      {
+        "relation": "requires",
+        "target": "key"
+      },
+      {
+        "relation": "state_change",
+        "target": "closed"
+      }
+    ],
+    "fire_trap": [
+      {
+        "relation": "causes",
+        "target": "damage/burn"
+      },
+      {
+        "relation": "damages",
+        "target": "leather_armor"
+      }
+    ],
+    "prayer": [
+      {
+        "relation": "causes",
+        "target": "divine_displeasure"
+      }
+    ],
+    "fountain": [
+      {
+        "relation": "state_change",
+        "target": "dried"
+      }
+    ]
+  },
+  "entity_counts": {
+    "food ration": 1110,
+    "club": 4374,
+    "sling": 1607,
+    "key": 1266,
+    "dagger": 1383,
+    "flint stone": 93,
+    "21 uncursed rocks": 58,
+    "leather armor": 3979,
+    "gnome corpse": 67,
+    "17 uncursed flint stones": 47,
+    "knife": 4,
+    "29 uncursed rocks": 64,
+    "25 uncursed rocks": 122,
+    "27 uncursed rocks": 120,
+    "elf corpse": 12,
+    "22 uncursed flint stones": 39,
+    "26 uncursed rocks": 104,
+    "28 uncursed rocks": 97,
+    "23 uncursed flint stones": 34,
+    "human corpse": 19,
+    "orange gem": 9,
+    "11 uncursed flint stones": 30,
+    "rock": 18,
+    "22 uncursed rocks": 71,
+    "23 uncursed rocks": 81,
+    "24 cursed rocks": 2,
+    "19 uncursed flint stones": 38,
+    "violet gem": 7,
+    "leash": 8,
+    "2 food rations": 201,
+    "20 uncursed flint stones": 28,
+    "15 uncursed flint stones": 25,
+    "32 uncursed rocks": 11,
+    "long sword": 2,
+    "24 uncursed rocks": 91,
+    "31 uncursed rocks": 18,
+    "20 uncursed rocks": 15,
+    "30 uncursed rocks": 39,
+    "18 uncursed flint stones": 35,
+    "13 uncursed flint stones": 39,
+    "dwarf corpse": 37,
+    "14 uncursed flint stones": 54,
+    "21 uncursed flint stones": 42,
+    "8 rocks": 2,
+    "candle": 9,
+    "2 uncursed flint stones": 9,
+    "18 rocks": 1,
+    "16 uncursed flint stones": 50,
+    "24 uncursed flint stones": 20,
+    "pear": 1,
+    "orc corpse": 43,
+    "rusty dagger": 4,
+    "tin opener": 2,
+    "12 uncursed flint stones": 28,
+    "chest": 1,
+    "bag": 4,
+    "whistle": 15,
+    "slime mold": 6,
+    "candy bar": 1,
+    "tinning kit": 3,
+    "green gem": 6,
+    "18 uncursed rocks": 3,
+    "10 uncursed flint stones": 10,
+    "silver saber": 1,
+    "can of grease": 3,
+    "black gem": 3,
+    "33 uncursed rocks": 10,
+    "11 silver arrows": 1,
+    "silver arrow": 1,
+    "tin": 2,
+    "25 uncursed flint stones": 12,
+    "19 uncursed rocks": 10,
+    "tripe ration": 5,
+    "yellowish brown gem": 5,
+    "yellow gem": 3,
+    "white gem": 4,
+    "2 uncursed rocks": 2,
+    "crossbow": 2,
+    "lembas wafer": 1,
+    "red gem": 5,
+    "blindfold": 4,
+    "looking glass": 2,
+    "carrot": 4,
+    "egg": 2,
+    "lock pick": 1,
+    "16 cursed flint stones": 1,
+    "7 runed arrows": 1,
+    "9 throwing stars": 2,
+    "26 cursed rocks": 2,
+    "2 tripe rations": 4,
+    "11 rocks": 2,
+    "magic marker": 3,
+    "angled poleaxe": 1,
+    "boomerang": 1,
+    "lamp": 1,
+    "saddle": 2,
+    "curved sword": 1,
+    "spear": 4,
+    "10 cursed darts": 1,
+    "stethoscope": 2,
+    "4 candles": 1,
+    "8 bamboo arrows": 1,
+    "hilted polearm": 1,
+    "brass lantern": 2,
+    "27 cursed rocks": 1,
+    "flail": 1,
+    "26 uncursed flint stones": 2,
+    "2 cream pies": 1,
+    "glass orb": 4,
+    "25 cursed rocks": 1,
+    "two-handed sword": 1,
+    "6 crude arrows": 1,
+    "10 crude arrows": 1,
+    "war hammer": 1,
+    "bell": 1,
+    "towel": 1,
+    "2 blue gems": 2,
+    "gray stone": 1,
+    "broad pick": 1,
+    "2 gray stones": 1,
+    "partly eaten tripe ration": 1,
+    "lance": 1,
+    "10 throwing stars": 1,
+    "7 bamboo arrows": 1,
+    "horn": 2,
+    "22 cursed rocks": 1,
+    "10 rocks": 1,
+    "double-headed axe": 1,
+    "11 arrows": 1,
+    "bow": 1,
+    "bugle": 2
+  }
+}
