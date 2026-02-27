@@ -1,0 +1,6 @@
+nle>=1.0.0
+minihack>=1.0.0
+torch>=2.0.0
+gymnasium>=1.0.0
+numpy
+matplotlib
