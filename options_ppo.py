@@ -371,21 +371,20 @@ def train(args):
     model     = MetaActorCritic(N_OPTIONS, blstats_size).to(device)
     optimizer = optim.Adam(model.parameters(), lr=LR, eps=1e-5)
 
-    # 加载知识图谱先验 + 子目标概率
-    kg_node_probs = {}
+    # ── 加载知识图谱，构建 KGPathState ──────────────────────────────────────────
+    kg_path_state = None
     try:
-        from kg_planner import load_graph, get_option_weights, dynamic_option_bias, get_node_probs
+        from kg_planner import load_graph, make_kg_path_state
         graph = load_graph()
-        bias = get_option_weights(graph, OPTIONS, args.env)
-        model.kg_bias.data = bias.to(device)
-        print(f"[KG] Loaded knowledge graph prior: {bias.tolist()}")
-        kg_node_probs, _ = get_node_probs(graph, 'agent', 'open')
-        if kg_node_probs:
-            print(f"[KG] Sub-goal node probs: { {k: f'{v:.4f}' for k, v in kg_node_probs.items()} }")
+        kg_path_state, init_bias = make_kg_path_state(
+            graph, OPTIONS, args.env, eta=ETA_REWARD
+        )
+        if kg_path_state is not None:
+            model.kg_bias.data = init_bias.to(device)
     except Exception as e:
         print(f"[KG] No prior loaded: {e}")
-    base_kg_bias = model.kg_bias.data.clone().cpu()
-    buf       = OptionBuffer(ROLLOUT_LEN, obs_shape, blstats_size, device)
+
+    buf = OptionBuffer(ROLLOUT_LEN, obs_shape, blstats_size, device)
 
     obs, _     = env.reset()
     ep_ret     = 0.0
@@ -395,9 +394,10 @@ def train(args):
     episode_returns = []
     option_counts   = np.zeros(N_OPTIONS, dtype=int)
     start = time.time()
-    _prev_chars  = None   # cache for dynamic bias — skip recompute if chars unchanged
-    key_obtained = False  # sub-goal flags, reset each episode
-    door_opened  = False
+
+    # KGPathState: 每个 episode 重置
+    if kg_path_state is not None:
+        kg_path_state.reset(obs)
 
     print(f"Training on {args.env} for ~{args.steps} primitive steps...\n")
 
@@ -405,47 +405,32 @@ def train(args):
         buf.reset()
 
         for _ in range(ROLLOUT_LEN):
-            # ── KG bias: decay magnitude toward zero over training ────────────────
+            # ── KG bias decay: 从 1.0 线性衰减到 0（训练后半段让 PPO 独立决策）───
             kg_decay = max(0.0, 1.0 - total_prim / (args.steps * 0.7))
-            effective_base = base_kg_bias * kg_decay
-            cur_chars = obs.get("chars")
-            if cur_chars is not None and not np.array_equal(cur_chars, _prev_chars):
-                try:
-                    dyn_bias = dynamic_option_bias(graph, obs, OPTIONS, args.env, effective_base, kg_decay)
-                    model.kg_bias.data = dyn_bias.to(device)
-                except Exception:
-                    pass
-                _prev_chars = cur_chars.copy()
 
-            # ── Build tensors ─────────────────────────────────────────────────────
-            g = torch.tensor(obs[OBS_KEY],    dtype=torch.long,  device=device).unsqueeze(0)
-            b = torch.tensor(obs["blstats"],  dtype=torch.float, device=device).unsqueeze(0)
+            # ── 动态 KG bias：来自当前路径位置（Dynamic Rerooting）───────────────
+            if kg_path_state is not None:
+                dyn_bias = kg_path_state.get_bias(kg_decay)
+                model.kg_bias.data = dyn_bias.to(device)
+
+            # ── Build tensors ──────────────────────────────────────────────────────
+            g = torch.tensor(obs[OBS_KEY],   dtype=torch.long,  device=device).unsqueeze(0)
+            b = torch.tensor(obs["blstats"], dtype=torch.float, device=device).unsqueeze(0)
             with torch.no_grad():
                 opt_idx, lp, _, v = model.get_action_and_value(g, b)
 
             option = OPTIONS[opt_idx.item()]
             option_counts[opt_idx.item()] += 1
 
-            # ── Snapshot visible sub-goals before executing the option ────────────
-            pre_chars = obs.get("chars")
-            key_vis_before  = (pre_chars is not None
-                               and np.any(pre_chars == KEY_CHAR)
-                               and not key_obtained)
-            door_vis_before = (pre_chars is not None
-                               and any(np.any(pre_chars == dc) for dc in DOOR_CHARS)
-                               and not door_opened)
-
+            # ── 执行 option，记录执行前观测 ───────────────────────────────────────
+            pre_obs            = obs
             obs, cum_r, done, prim_n = execute_option(env, obs, option)
 
-            # ── Intrinsic sub-goal rewards: R = η · P_node · decay ───────────────
-            # P_node from KG; decay matches kg_bias schedule (zero at 70% of training)
-            post_chars = obs.get("chars")
-            if key_vis_before and post_chars is not None and not np.any(post_chars == KEY_CHAR):
-                cum_r       += ETA_REWARD * kg_node_probs.get('key', 0.0) * kg_decay
-                key_obtained = True
-            if door_vis_before and post_chars is not None and not any(np.any(post_chars == dc) for dc in DOOR_CHARS):
-                cum_r       += ETA_REWARD * kg_node_probs.get('door', 0.0) * kg_decay
-                door_opened = True
+            # ── KGPathState.update: 检测边穿越，获取 KG-derived intrinsic reward ──
+            # 完全由 KG 节点概率驱动，无人工设定奖励值
+            if kg_path_state is not None:
+                intr_r  = kg_path_state.update(pre_obs, obs)
+                cum_r  += intr_r
 
             ep_ret     += cum_r
             total_prim += prim_n
@@ -466,10 +451,9 @@ def train(args):
                     print(f"  [{counts}]")
                 ep_ret = 0.0
                 obs, _ = env.reset()
-                done = False
-                _prev_chars  = None   # force bias refresh at episode start
-                key_obtained = False  # reset sub-goal flags for new episode
-                door_opened  = False
+                done   = False
+                if kg_path_state is not None:
+                    kg_path_state.reset(obs)   # 每 episode 重置路径状态
 
             if total_prim >= args.steps:
                 break
