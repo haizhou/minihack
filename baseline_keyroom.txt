@@ -1,0 +1,19 @@
+/home/mark/miniconda3/envs/minihack/lib/python3.9/site-packages/minihack/base.py:8: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+Device: cuda
+Env: MiniHack-KeyRoom-S5-v0 | Actions: 10 | Obs: (21, 79)
+Training for 20000 steps...
+
+Steps:    1942 | Eps:    10 | MeanRet(10):  -0.919 | SPS: 190
+Steps:    3942 | Eps:    20 | MeanRet(10):  -1.124 | SPS: 206
+Steps:    5845 | Eps:    30 | MeanRet(10):  -0.906 | SPS: 219
+Steps:    7845 | Eps:    40 | MeanRet(10):  -1.104 | SPS: 227
+Steps:    9845 | Eps:    50 | MeanRet(10):  -1.098 | SPS: 230
+Steps:   11845 | Eps:    60 | MeanRet(10):  -1.126 | SPS: 226
+Steps:   13845 | Eps:    70 | MeanRet(10):  -1.107 | SPS: 226
+Steps:   15845 | Eps:    80 | MeanRet(10):  -1.098 | SPS: 222
+Steps:   17845 | Eps:    90 | MeanRet(10):  -1.110 | SPS: 215
+Steps:   19773 | Eps:   100 | MeanRet(10):  -0.894 | SPS: 214
+
+Training complete. Final mean return (last 20): -1.001
+Saved to ppo_baseline.pt

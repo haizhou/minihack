@@ -34,7 +34,7 @@ def normalize(msg):
 
 def collect(args):
     env = gym.make("MiniHack-DenseRoom-v0")
-    states, actions, next_states, rewards, dones, messages = [], [], [], [], [], []
+    states, blstats_list, actions, next_states, next_blstats_list, rewards, dones, messages = [], [], [], [], [], [], [], []
     seen_messages, no_new_count, total_steps, ep = set(), 0, 0, 0
     print("World Knowledge Collection (3x3)\n")
     while True:
@@ -42,6 +42,7 @@ def collect(args):
         done, new_this_ep = False, 0
         while not done:
             s = obs["glyphs"].copy()
+            b = obs["blstats"].copy()
             a = env.action_space.sample()
             next_obs, r, terminated, truncated, _ = env.step(a)
             done = terminated or truncated
@@ -52,8 +53,9 @@ def collect(args):
                     seen_messages.add(norm)
                     new_this_ep += 1
                     print(f"  [NEW #{len(seen_messages):3d}] {norm}")
-                states.append(s); actions.append(a)
+                states.append(s); blstats_list.append(b); actions.append(a)
                 next_states.append(next_obs["glyphs"].copy())
+                next_blstats_list.append(next_obs["blstats"].copy())
                 rewards.append(r); dones.append(float(done)); messages.append(norm)
             obs = next_obs
             total_steps += 1
@@ -68,9 +70,14 @@ def collect(args):
     env.close()
     os.makedirs("data", exist_ok=True)
     np.savez_compressed("data/world_knowledge.npz",
-        states=np.array(states, dtype=np.int16), actions=np.array(actions, dtype=np.int16),
-        next_states=np.array(next_states, dtype=np.int16), rewards=np.array(rewards, dtype=np.float32),
-        dones=np.array(dones, dtype=np.float32), messages=np.array(messages))
+        states=np.array(states, dtype=np.int16),
+        blstats=np.array(blstats_list, dtype=np.float32),
+        actions=np.array(actions, dtype=np.int16),
+        next_states=np.array(next_states, dtype=np.int16),
+        next_blstats=np.array(next_blstats_list, dtype=np.float32),
+        rewards=np.array(rewards, dtype=np.float32),
+        dones=np.array(dones, dtype=np.float32),
+        messages=np.array(messages))
     print(f"\nSaved {len(states)} transitions")
     print(f"\nWORLD KNOWLEDGE ({len(seen_messages)} interactions):")
     for i, m in enumerate(sorted(seen_messages)):
