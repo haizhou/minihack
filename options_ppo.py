@@ -16,6 +16,7 @@ Usage:
     python options_ppo.py --env MiniHack-KeyRoom-S5-v0 --steps 200000
 """
 import argparse
+import os
 import time
 from collections import deque
 import numpy as np
@@ -28,17 +29,18 @@ import minihack  # noqa
 from nle import nethack
 
 # ── Hyperparameters ───────────────────────────────────────────────────────────
-GAMMA            = 0.99
-GAE_LAMBDA       = 0.95
-CLIP_EPS         = 0.2
-ENTROPY_COEF     = 0.01
-VALUE_COEF       = 0.5
-MAX_GRAD         = 0.5
-LR               = 2.5e-4
-ROLLOUT_LEN      = 64
-N_EPOCHS         = 4
-BATCH_SIZE       = 16
-MAX_OPTION_STEPS = 50   # increased for harder envs
+GAMMA              = 0.99
+GAE_LAMBDA         = 0.95
+CLIP_EPS           = 0.2
+ENTROPY_COEF_START = 0.05    # high entropy early → explore options freely
+ENTROPY_COEF_END   = 0.005   # low entropy late  → commit to learned policy
+VALUE_COEF         = 0.5
+MAX_GRAD           = 0.5
+LR                 = 2.5e-4
+ROLLOUT_LEN        = 128     # larger buffer → more stable gradient estimates
+N_EPOCHS           = 6       # more SGD passes per rollout
+BATCH_SIZE         = 32
+MAX_OPTION_STEPS   = 30      # shorter cap prevents long futile loops
 OBS_KEY          = "glyphs"
 
 # Intrinsic reward scale; per-sub-goal magnitude = ETA * P_node * decay
@@ -197,33 +199,72 @@ class FindKeyOption(Option):
 
 class OpenDoorOption(Option):
     """
-    KeyRoom-specific: navigate adjacent to door '+', then apply key.
-    Addresses the second subtask of KeyRoom.
+    KeyRoom-specific: navigate adjacent to door '+', then unlock+open with key.
+
+    NetHack 开门分两个独立动作：
+      unlock:  APPLY ('a') → 选 key ('a') → 朝门方向 → 门解锁，但仍显示 '+'
+      open:    再走进门（bump）→ '+' 变成 '-'/'|' 并消失出 DOOR_CHARS → 检测成功
+
+    完整四步状态机（每个 cycle）：
+      navigate → apply1 → apply2 → bump → (back to navigate)
+        apply1: APPLY_ACTION         — 进入 apply 模式，"Apply which item?"
+        apply2: APPLY_ACTION         — 选 slot 'a'（key 固定在此 slot）
+        bump:   cached_dir (unlock)  — "In what direction?" → 解锁门
+        然后在 navigate 状态再发一次 cached_dir (open) — 走进已解锁的门
+
+    关键设计：
+    - 到达门旁时缓存方向（此时地图可见，APPLY 后可能被 menu 覆盖）
+    - terminate() 在 apply1/apply2/bump 三步中跳过门存在检查（避免 menu overlay 误判）
+    - _cycle_count 统计完整 cycle，达到阈值则放弃
     """
     name = "OpenDoor"
+
     def initiate(self, obs):
-        self._opened = False
+        # 状态机: navigate → apply1 → apply2 → bump → navigate → ...
+        self._step        = 'navigate'
+        self._cached_dir  = None   # 到门的方向（地图可见时缓存，后续步骤复用）
+        self._cycle_count = 0      # 已完成的完整四步 cycle 次数
+
     def act(self, obs):
-        # If already adjacent to door, attempt to apply key
-        if adjacent_to_any(obs["blstats"], obs["glyphs"], DOOR_CHARS, chars=obs["chars"]):
-            self._opened = True
+        if self._step == 'apply1':
+            # 第二步：发 APPLY 选择 inventory slot 'a'（key）
+            self._step = 'apply2'
             return APPLY_ACTION
-        # Otherwise BFS toward door
+
+        if self._step == 'apply2':
+            # 第三步：发方向指令 → "In what direction?" → 解锁门（门仍是 '+'）
+            self._step = 'bump'
+            return self._cached_dir if self._cached_dir is not None else WAIT_ACTION
+
+        if self._step == 'bump':
+            # 第四步：走进已解锁的门 → 门从 '+' 变为 '-'/'|' 并消失
+            self._step = 'navigate'
+            self._cycle_count += 1
+            return self._cached_dir if self._cached_dir is not None else WAIT_ACTION
+
+        # navigate 阶段：BFS 向门移动；相邻后启动四步序列
+        if adjacent_to_any(obs["blstats"], obs["glyphs"], DOOR_CHARS, chars=obs["chars"]):
+            # 趁地图可见缓存方向（APPLY 后 menu 可能覆盖地图）
+            self._cached_dir = bfs_next_action(
+                obs["glyphs"], obs["blstats"], DOOR_CHARS, chars=obs["chars"]
+            )
+            self._step = 'apply1'
+            return APPLY_ACTION   # 第一步：进入 apply 模式
+
         a = bfs_next_action(obs["glyphs"], obs["blstats"], DOOR_CHARS, chars=obs["chars"])
         return a if a is not None else int(np.random.choice(list(COMPASS.values())))
+
     def terminate(self, obs, step):
-        if self._opened:
-            # Verify the door actually disappeared — apply may have failed (no key etc.)
-            doors_remain = find_chars(obs["glyphs"], DOOR_CHARS, chars=obs["chars"])
-            if not doors_remain:
-                return True     # door is genuinely gone
-            self._opened = False  # apply failed, keep trying
+        # apply/bump 序列进行中：跳过门检查（menu overlay 可能让 '+' 暂时不可见）
+        if self._step in ('apply1', 'apply2', 'bump'):
+            return step >= MAX_OPTION_STEPS
+
+        doors_remain = find_chars(obs["glyphs"], DOOR_CHARS, chars=obs["chars"])
+        if not doors_remain:
+            return True             # 门消失（'+' 变成 '-'/'|'）→ 开门成功
+        if self._cycle_count >= 3:
+            return True             # 三次四步 cycle 均失败，放弃
         if step >= MAX_OPTION_STEPS:
-            return True
-        # Give the agent enough steps to locate the door before giving up;
-        # step > 2 was far too aggressive for rooms larger than 3×3
-        doors = find_chars(obs["glyphs"], DOOR_CHARS, chars=obs["chars"])
-        if step > MAX_OPTION_STEPS // 4 and not doors:
             return True
         return False
 
@@ -336,7 +377,7 @@ class OptionBuffer:
 
 
 # ── PPO update ────────────────────────────────────────────────────────────────
-def ppo_update(model, optimizer, buf, last_v, device):
+def ppo_update(model, optimizer, buf, last_v, device, entropy_coef=ENTROPY_COEF_END):
     rets, adv = buf.compute_returns(last_v, GAMMA, GAE_LAMBDA)
     adv = (adv - adv.mean()) / (adv.std() + 1e-8)
     for _ in range(N_EPOCHS):
@@ -349,7 +390,7 @@ def ppo_update(model, optimizer, buf, last_v, device):
                 -torch.min(r * adv[i],
                            torch.clamp(r, 1-CLIP_EPS, 1+CLIP_EPS) * adv[i]).mean()
                 + VALUE_COEF * 0.5 * (v - rets[i]).pow(2).mean()
-                - ENTROPY_COEF * ent.mean()
+                - entropy_coef * ent.mean()
             )
             optimizer.zero_grad()
             loss.backward()
@@ -364,7 +405,8 @@ def train(args):
     print(f"Options ({N_OPTIONS}): {[o.name for o in OPTIONS]}\n")
 
     env = gym.make(args.env, observation_keys=("glyphs", "blstats", "chars"),
-                   reward_win=1.0, reward_lose=-1.0, penalty_step=-0.001)
+                   reward_win=args.reward_win, reward_lose=-1.0, penalty_step=-0.001)
+    print(f"Reward on win: {args.reward_win}")
     obs_shape    = env.observation_space["glyphs"].shape
     blstats_size = env.observation_space["blstats"].shape[0]
 
@@ -405,8 +447,12 @@ def train(args):
         buf.reset()
 
         for _ in range(ROLLOUT_LEN):
-            # ── KG bias decay: 从 1.0 线性衰减到 0（训练后半段让 PPO 独立决策）───
-            kg_decay = max(0.0, 1.0 - total_prim / (args.steps * 0.7))
+            # ── Entropy decay: high early (explore), low late (exploit) ──────────
+            progress      = total_prim / args.steps
+            entropy_coef  = ENTROPY_COEF_START + (ENTROPY_COEF_END - ENTROPY_COEF_START) * progress
+
+            # ── KG bias decay: floor at 0.15 so KG always has residual influence ─
+            kg_decay = max(0.15, 1.0 - total_prim / (args.steps * 0.7))
 
             # ── 动态 KG bias：来自当前路径位置（Dynamic Rerooting）───────────────
             if kg_path_state is not None:
@@ -426,10 +472,12 @@ def train(args):
             pre_obs            = obs
             obs, cum_r, done, prim_n = execute_option(env, obs, option)
 
-            # ── KGPathState.update: 检测边穿越，获取 KG-derived intrinsic reward ──
-            # 完全由 KG 节点概率驱动，无人工设定奖励值
+            # ── KGPathState: 先记录 option 尝试（学习顺序依赖），再检测边穿越 ────
+            # record_option_attempt 在 update() 推进路径步骤之前调用，
+            # 这样它能知道"此时路径在哪一步"，从而判断是否是超前调用
             if kg_path_state is not None:
-                intr_r  = kg_path_state.update(pre_obs, obs)
+                kg_path_state.record_option_attempt(option.name, pre_obs, obs)
+                intr_r  = kg_path_state.update(pre_obs, obs, option_name=option.name)
                 cum_r  += intr_r
 
             ep_ret     += cum_r
@@ -440,6 +488,12 @@ def train(args):
             if done:
                 ep_count += 1
                 episode_returns.append(ep_ret)
+                success = ep_ret >= args.reward_win * 0.5   # only genuine wins (≥ 2.5 with reward_win=5.0)
+                if kg_path_state is not None:
+                    if success:
+                        # 发现模式：同时传入 pre_obs（楼梯未被 @ 遮挡时可见）和 terminal obs
+                        kg_path_state.discover_from_victory(obs, pre_victory_obs=pre_obs)
+                    kg_path_state.end_episode(success)   # EMA 自更新 node_probs
                 if ep_count % 10 == 0:
                     mean_ret = np.mean(episode_returns[-10:])
                     sps      = total_prim / (time.time() - start)
@@ -462,7 +516,7 @@ def train(args):
         b_last = torch.tensor(obs["blstats"], dtype=torch.float, device=device).unsqueeze(0)
         with torch.no_grad():
             _, _, _, lv = model.get_action_and_value(g_last, b_last)
-        ppo_update(model, optimizer, buf, lv.item() if not done else 0.0, device)
+        ppo_update(model, optimizer, buf, lv.item() if not done else 0.0, device, entropy_coef)
 
     env.close()
     final = np.mean(episode_returns[-20:]) if episode_returns else 0.0
@@ -470,14 +524,20 @@ def train(args):
     print("\nOption usage:")
     for i, o in enumerate(OPTIONS):
         print(f"  {o.name:25s}: {option_counts[i]:6d} times")
+    os.makedirs(os.path.dirname(os.path.abspath(args.save_path)), exist_ok=True)
     torch.save(model.state_dict(), args.save_path)
     print(f"Saved to {args.save_path}")
+    if kg_path_state is not None:
+        kg_path_state.save_updated_probs()
+        print("[KG] Saved learned node probabilities to data/kg_learned_probs.json")
     return episode_returns
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env",       default="MiniHack-KeyRoom-S5-v0")
-    parser.add_argument("--steps",     type=int, default=200_000)
-    parser.add_argument("--save_path", default="options_ppo.pt")
+    parser.add_argument("--env",        default="MiniHack-KeyRoom-S5-v0")
+    parser.add_argument("--steps",      type=int,   default=200_000)
+    parser.add_argument("--save_path",  default="options_ppo.pt")
+    parser.add_argument("--reward-win", dest="reward_win", type=float, default=5.0,
+                        help="Reward given when task is solved (default: 5.0)")
     train(parser.parse_args())
