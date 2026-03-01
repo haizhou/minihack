@@ -45,7 +45,7 @@ OBS_KEY          = "glyphs"
 
 # Intrinsic reward scale; per-sub-goal magnitude = ETA * P_node * decay
 # P_node comes from kg_planner.get_node_probs; decay matches kg_bias schedule
-ETA_REWARD = 0.5
+ETA_REWARD = 0.1
 
 # Primitive compass actions (NLE default action indices)
 COMPASS = {(-1,0):0, (0,1):1, (1,0):2, (0,-1):3,
@@ -68,14 +68,9 @@ def get_agent_pos(blstats):
 
 def find_chars(glyphs, target_chars, chars=None):
     """用 chars 数组直接匹配字符值，glyphs 保留兼容性但不使用。"""
-    positions = []
     if chars is None:
-        return positions
-    for r in range(chars.shape[0]):
-        for c in range(chars.shape[1]):
-            if chars[r, c] in target_chars:
-                positions.append((r, c))
-    return positions
+        return []
+    return [tuple(p) for p in np.argwhere(np.isin(chars, list(target_chars)))]
 
 
 WALKABLE = set(map(ord, ' .@<>_#('))
@@ -86,27 +81,29 @@ def bfs_next_action(glyphs, blstats, target_chars, chars=None):
     h, w    = chars.shape
     start   = get_agent_pos(blstats)
     targets = set(find_chars(glyphs, target_chars, chars=chars))
-    if not targets:
+    if not targets or start in targets:
         return None
     visited = {start}
-    queue   = deque([(start, [])])
+    parent  = {start: None}   # pos → parent pos；用父指针代替存整条路径
+    queue   = deque([start])
     while queue:
-        pos, path = queue.popleft()
+        pos = queue.popleft()
         if pos in targets:
-            if not path:
-                return None
-            first = path[0]
-            dr = max(-1, min(1, first[0] - start[0]))
-            dc = max(-1, min(1, first[1] - start[1]))
+            # 反向追溯到起点的第一步
+            while parent[pos] != start:
+                pos = parent[pos]
+            dr = max(-1, min(1, pos[0] - start[0]))
+            dc = max(-1, min(1, pos[1] - start[1]))
             return COMPASS.get((dr, dc), WAIT_ACTION)
         r, c = pos
         for ddr, ddc in COMPASS:
             nr, nc = r + ddr, c + ddc
-            if 0 <= nr < h and 0 <= nc < w and (nr, nc) not in visited:
-                cell = chars[nr, nc]
-                if cell in WALKABLE or (nr, nc) in targets:
-                    visited.add((nr, nc))
-                    queue.append(((nr, nc), path + [(nr, nc)]))
+            npos = (nr, nc)
+            if 0 <= nr < h and 0 <= nc < w and npos not in visited:
+                if chars[nr, nc] in WALKABLE or npos in targets:
+                    visited.add(npos)
+                    parent[npos] = pos
+                    queue.append(npos)
     return None
 
 
@@ -130,10 +127,28 @@ class Option:
 
 
 class ExploreOption(Option):
+    """优先走未访问过的相邻格，退化为随机游走当所有邻居都已访问。"""
     name = "Explore"
-    def initiate(self, obs): pass
+
+    def initiate(self, obs):
+        self._visited = set()
+        self._visited.add(get_agent_pos(obs["blstats"]))
+
     def act(self, obs):
+        r, c  = get_agent_pos(obs["blstats"])
+        self._visited.add((r, c))
+        chars = obs["chars"]
+        h, w  = chars.shape
+        unvisited = [
+            action for (dr, dc), action in COMPASS.items()
+            if 0 <= r+dr < h and 0 <= c+dc < w
+            and chars[r+dr, c+dc] in WALKABLE
+            and (r+dr, c+dc) not in self._visited
+        ]
+        if unvisited:
+            return int(np.random.choice(unvisited))
         return int(np.random.choice(list(COMPASS.values())))
+
     def terminate(self, obs, step):
         return step >= MAX_OPTION_STEPS
 
@@ -145,10 +160,9 @@ class NavigateToStaircaseOption(Option):
         a = bfs_next_action(obs["glyphs"], obs["blstats"], {STAIRCASE_CHAR}, chars=obs["chars"])
         return a if a is not None else int(np.random.choice(list(COMPASS.values())))
     def terminate(self, obs, step):
-        if step >= MAX_OPTION_STEPS:
-            return True
-        r, c = get_agent_pos(obs["blstats"])
-        return (r, c) in set(find_chars(obs["glyphs"], {STAIRCASE_CHAR}, chars=obs["chars"]))
+        # 踩上 '>' 会触发 done=True（episode 结束），execute_option 会直接 break；
+        # 这里仅作超时兜底
+        return step >= MAX_OPTION_STEPS
 
 
 class PickupItemOption(Option):
@@ -203,67 +217,94 @@ class OpenDoorOption(Option):
 
     NetHack 开门分两个独立动作：
       unlock:  APPLY ('a') → 选 key ('a') → 朝门方向 → 门解锁，但仍显示 '+'
-      open:    再走进门（bump）→ '+' 变成 '-'/'|' 并消失出 DOOR_CHARS → 检测成功
+      open:    走进已解锁的门（bump）→ '+' 变成 '-'/'|' 并消失 → 检测成功
 
     完整四步状态机（每个 cycle）：
-      navigate → apply1 → apply2 → bump → (back to navigate)
-        apply1: APPLY_ACTION         — 进入 apply 模式，"Apply which item?"
-        apply2: APPLY_ACTION         — 选 slot 'a'（key 固定在此 slot）
-        bump:   cached_dir (unlock)  — "In what direction?" → 解锁门
-        然后在 navigate 状态再发一次 cached_dir (open) — 走进已解锁的门
+      navigate → apply1 → apply2 → unlock → (back to navigate)
+        apply1: APPLY_ACTION  — 进入 apply 模式，"Apply which item?"
+        apply2: APPLY_ACTION  — 选 slot 'a'（key 固定在此 slot），"In what direction?"
+        unlock: cached_dir    — 回答方向 → 门解锁（仍显示 '+'）
+      navigate 下一步:
+        BFS 相邻门 → 发 cached_dir 走进已解锁门 → 门消失（成功）
 
     关键设计：
-    - 到达门旁时缓存方向（此时地图可见，APPLY 后可能被 menu 覆盖）
-    - terminate() 在 apply1/apply2/bump 三步中跳过门存在检查（避免 menu overlay 误判）
+    - 到达门旁时缓存方向（APPLY 后 menu 覆盖地图，所以提前缓存）
+    - terminate() 在 apply1/apply2/unlock 三步中跳过门检查（避免 menu overlay 误判）
+    - message 包含 "apply" 或 "direction" 关键词时额外保护，防止误终止
     - _cycle_count 统计完整 cycle，达到阈值则放弃
     """
     name = "OpenDoor"
 
+    # NLE message 中出现这些词说明正处于交互菜单，不应判定失败
+    _MENU_KEYWORDS = (b"apply", b"direction", b"what do you want", b"which item")
+
     def initiate(self, obs):
-        # 状态机: navigate → apply1 → apply2 → bump → navigate → ...
+        # 状态机: navigate → apply1 → apply2 → unlock → navigate → ...
         self._step        = 'navigate'
-        self._cached_dir  = None   # 到门的方向（地图可见时缓存，后续步骤复用）
-        self._cycle_count = 0      # 已完成的完整四步 cycle 次数
+        self._cached_dir  = None
+        self._cycle_count = 0
+
+    @staticmethod
+    def _has_key(obs):
+        """通过 inv_letters 观测判断 slot 'a' 是否有物品（即钥匙是否在背包里）。
+        inv_letters 是 NLE 原生观测，每个元素是对应 slot 字母的 ASCII 码，0 表示空。
+        同时解决了 slot 假设问题：如果 slot 'a' 真的没东西，就不发 APPLY，
+        避免在错误 slot 上浪费动作。
+        """
+        letters = obs.get("inv_letters")
+        if letters is None:
+            return True   # 无法观测时放行，保持之前行为
+        return bool(letters[0])   # slot 'a' 非空 → 有物品可 apply
+
+    @staticmethod
+    def _in_menu(obs):
+        """检查 message 是否包含交互菜单提示。"""
+        msg = obs.get("message")
+        if msg is None:
+            return False
+        raw = bytes(msg.flatten()).lower()
+        return any(kw in raw for kw in OpenDoorOption._MENU_KEYWORDS)
 
     def act(self, obs):
         if self._step == 'apply1':
-            # 第二步：发 APPLY 选择 inventory slot 'a'（key）
             self._step = 'apply2'
-            return APPLY_ACTION
+            return APPLY_ACTION                   # 选 inventory slot 'a'（key）
 
         if self._step == 'apply2':
-            # 第三步：发方向指令 → "In what direction?" → 解锁门（门仍是 '+'）
-            self._step = 'bump'
+            self._step = 'unlock'
             return self._cached_dir if self._cached_dir is not None else WAIT_ACTION
+            # 回答 "In what direction?" → 门解锁，仍显示 '+'
 
-        if self._step == 'bump':
-            # 第四步：走进已解锁的门 → 门从 '+' 变为 '-'/'|' 并消失
+        if self._step == 'unlock':
+            # 走进已解锁的门 → '+' 消失
             self._step = 'navigate'
             self._cycle_count += 1
             return self._cached_dir if self._cached_dir is not None else WAIT_ACTION
 
         # navigate 阶段：BFS 向门移动；相邻后启动四步序列
         if adjacent_to_any(obs["blstats"], obs["glyphs"], DOOR_CHARS, chars=obs["chars"]):
-            # 趁地图可见缓存方向（APPLY 后 menu 可能覆盖地图）
             self._cached_dir = bfs_next_action(
                 obs["glyphs"], obs["blstats"], DOOR_CHARS, chars=obs["chars"]
             )
             self._step = 'apply1'
-            return APPLY_ACTION   # 第一步：进入 apply 模式
+            return APPLY_ACTION                   # 进入 apply 模式
 
         a = bfs_next_action(obs["glyphs"], obs["blstats"], DOOR_CHARS, chars=obs["chars"])
         return a if a is not None else int(np.random.choice(list(COMPASS.values())))
 
     def terminate(self, obs, step):
-        # apply/bump 序列进行中：跳过门检查（menu overlay 可能让 '+' 暂时不可见）
-        if self._step in ('apply1', 'apply2', 'bump'):
+        # 背包 slot 'a' 为空 → 钥匙还没拿到，立刻退出让 meta-policy 重新决策
+        if not self._has_key(obs):
+            return True
+        # 序列进行中或处于交互菜单：跳过门存在检查
+        if self._step in ('apply1', 'apply2', 'unlock') or self._in_menu(obs):
             return step >= MAX_OPTION_STEPS
 
         doors_remain = find_chars(obs["glyphs"], DOOR_CHARS, chars=obs["chars"])
         if not doors_remain:
-            return True             # 门消失（'+' 变成 '-'/'|'）→ 开门成功
+            return True             # 门消失 → 开门成功
         if self._cycle_count >= 3:
-            return True             # 三次四步 cycle 均失败，放弃
+            return True             # 三次 cycle 均失败，放弃
         if step >= MAX_OPTION_STEPS:
             return True
         return False
@@ -277,22 +318,30 @@ OPTIONS   = [
     FindKeyOption(),
     OpenDoorOption(),
 ]
-N_OPTIONS = len(OPTIONS)
+N_OPTIONS     = len(OPTIONS)
+OPEN_DOOR_IDX = next(i for i, o in enumerate(OPTIONS) if o.name == "OpenDoor")
 
 
 # ── Option execution ──────────────────────────────────────────────────────────
 def execute_option(env, obs, option):
+    """执行一个 option 直到其终止条件满足。
+
+    SMDP 要求：每次 option 调用必须至少消耗 1 个 primitive step。
+    因此使用 do-while 结构（先 act 再 terminate），杜绝"零步选项死循环"：
+    即 terminate() 在 step=0 时立刻返回 True → meta-policy 拿回控制权
+    → 同一帧画面被反复调用 → option 计数暴涨、SPS 断崖下跌的问题。
+    """
     option.initiate(obs)
     cum_r = 0.0
     step  = 0
     done  = False
-    while not option.terminate(obs, step):
+    while True:
         a = option.act(obs)
         obs, r, terminated, truncated, _ = env.step(a)
         done   = terminated or truncated
         cum_r += r
         step  += 1
-        if done:
+        if done or option.terminate(obs, step):
             break
     return obs, cum_r, done, step
 
@@ -331,9 +380,12 @@ class MetaActorCritic(nn.Module):
         f = torch.cat([self.glyph_enc(g), self.blstats_enc(b)], dim=-1)
         return self.policy(f), self.value(f).squeeze(-1)
 
-    def get_action_and_value(self, g, b, action=None):
+    def get_action_and_value(self, g, b, action=None, mask=None):
         logits, val = self(g, b)
         logits = logits + self.kg_bias
+        if mask is not None:
+            # 将无效 option 的 logit 置为 -inf，使其概率为 0
+            logits = logits.masked_fill(~mask, float('-inf'))
         dist = Categorical(logits=logits)
         if action is None:
             action = dist.sample()
@@ -352,13 +404,15 @@ class OptionBuffer:
         self.dones     = torch.zeros(n).to(device)
         self.values    = torch.zeros(n).to(device)
         self.durations = torch.zeros(n).to(device)   # option duration k (SMDP)
+        # 动作掩码：记录每步选 option 时的合法集合，PPO update 时复用保证 ratio 一致
+        self.masks     = torch.ones((n, N_OPTIONS), dtype=torch.bool).to(device)
         self.ptr = 0
 
-    def add(self, g, b, o, lp, r, d, v, k):
+    def add(self, g, b, o, lp, r, d, v, k, mask):
         i = self.ptr
         self.glyphs[i]=g; self.blstats[i]=b; self.options[i]=o
         self.logprobs[i]=lp; self.rewards[i]=r; self.dones[i]=d
-        self.values[i]=v;  self.durations[i]=k
+        self.values[i]=v;  self.durations[i]=k; self.masks[i]=mask
         self.ptr += 1
 
     def compute_returns(self, last_v, gamma, lam):
@@ -384,7 +438,7 @@ def ppo_update(model, optimizer, buf, last_v, device, entropy_coef=ENTROPY_COEF_
         idx = np.random.permutation(buf.ptr)
         for s in range(0, buf.ptr, BATCH_SIZE):
             i = torch.tensor(idx[s:s + BATCH_SIZE], device=device)
-            _, lp, ent, v = model.get_action_and_value(buf.glyphs[i], buf.blstats[i], buf.options[i])
+            _, lp, ent, v = model.get_action_and_value(buf.glyphs[i], buf.blstats[i], buf.options[i], mask=buf.masks[i])
             r    = (lp - buf.logprobs[i]).exp()
             loss = (
                 -torch.min(r * adv[i],
@@ -404,7 +458,7 @@ def train(args):
     print(f"Device: {device}")
     print(f"Options ({N_OPTIONS}): {[o.name for o in OPTIONS]}\n")
 
-    env = gym.make(args.env, observation_keys=("glyphs", "blstats", "chars"),
+    env = gym.make(args.env, observation_keys=("glyphs", "blstats", "chars", "message", "inv_letters"),
                    reward_win=args.reward_win, reward_lose=-1.0, penalty_step=-0.001)
     print(f"Reward on win: {args.reward_win}")
     obs_shape    = env.observation_space["glyphs"].shape
@@ -462,14 +516,25 @@ def train(args):
             # ── Build tensors ──────────────────────────────────────────────────────
             g = torch.tensor(obs[OBS_KEY],   dtype=torch.long,  device=device).unsqueeze(0)
             b = torch.tensor(obs["blstats"], dtype=torch.float, device=device).unsqueeze(0)
+
+            # ── 动作掩码：没有钥匙时禁止选 OpenDoor ───────────────────────────────
+            inv = obs.get("inv_letters")
+            has_key = bool(inv[0]) if inv is not None else True
+            opt_mask = torch.ones(N_OPTIONS, dtype=torch.bool, device=device)
+            if not has_key:
+                opt_mask[OPEN_DOOR_IDX] = False
+
             with torch.no_grad():
-                opt_idx, lp, _, v = model.get_action_and_value(g, b)
+                opt_idx, lp, _, v = model.get_action_and_value(g, b, mask=opt_mask.unsqueeze(0))
 
             option = OPTIONS[opt_idx.item()]
             option_counts[opt_idx.item()] += 1
 
             # ── 执行 option，记录执行前观测 ───────────────────────────────────────
-            pre_obs            = obs
+            # NLE observation arrays are views into shared C buffers; copy so
+            # that subsequent env.step() calls don't overwrite pre_obs in-place.
+            pre_obs = {k: v.copy() if isinstance(v, np.ndarray) else v
+                       for k, v in obs.items()}
             obs, cum_r, done, prim_n = execute_option(env, obs, option)
 
             # ── KGPathState: 先记录 option 尝试（学习顺序依赖），再检测边穿越 ────
@@ -477,13 +542,13 @@ def train(args):
             # 这样它能知道"此时路径在哪一步"，从而判断是否是超前调用
             if kg_path_state is not None:
                 kg_path_state.record_option_attempt(option.name, pre_obs, obs)
-                intr_r  = kg_path_state.update(pre_obs, obs, option_name=option.name)
+                intr_r  = kg_path_state.update(pre_obs, obs, option_name=option.name, kg_decay=kg_decay)
                 cum_r  += intr_r
 
             ep_ret     += cum_r
             total_prim += prim_n
 
-            buf.add(g.squeeze(0), b.squeeze(0), opt_idx, lp, cum_r, float(done), v, float(prim_n))
+            buf.add(g.squeeze(0), b.squeeze(0), opt_idx, lp, cum_r, float(done), v, float(prim_n), opt_mask)
 
             if done:
                 ep_count += 1

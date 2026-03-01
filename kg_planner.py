@@ -37,11 +37,14 @@ OPTION_TO_NODE = {
 # 语义来自 edge relation 本身的含义，不依赖特定环境规则：
 #   can_pickup:   物品从地图消失（被拾取）→ glyph 数量减少
 #   enables:      持有物品后触发状态变化 → 目标 glyph 数量减少
-#   state_change: 实体状态改变         → 目标 glyph 数量减少
+#   state_change: 实体状态改变 → 一旦到达此步骤自动穿越
+#                （door→open：门开状态是门消失的直接结果，在同一 option 调用内链式触发）
+#   discovered:   explore 中发现 → 目标 glyph 数量减少（楼梯：走上去时 '>' 变 '@'）
 EDGE_DETECTION = {
     'can_pickup':   'glyph_decrease',
     'enables':      'glyph_decrease',
-    'state_change': 'glyph_decrease',
+    'state_change': 'auto',         # fires automatically once previous edge has fired
+    'discovered':   'glyph_decrease',
 }
 
 
@@ -203,13 +206,14 @@ class KGPathState:
                 if any(int(np.sum(chars == c)) > 0 for c in char_set):
                     self._nodes_seen_this_episode.add(node_name)
 
-    def update(self, pre_obs, post_obs, option_name=''):
+    def update(self, pre_obs, post_obs, option_name='', kg_decay=1.0):
         """
         option 执行完后调用。比较执行前后的观测，判断是否穿越了下一条 KG 边。
 
-        返回: intrinsic_reward (float)
-          - 穿越了边: = node_probs[dst] * eta
-          - 未穿越:   = 0.0
+        使用多边扫描循环：单次 option 执行可能同时触发多条 KG 边
+        （例如 MiniHack 在拾取 key 时自动开门，key→door 两条边同时满足）。
+
+        返回: intrinsic_reward (float) — 本次 update 触发的所有边的奖励之和
         """
         # 持续记录 episode 内见过的所有节点（用于 discover_from_victory 翻旧账）
         pre_chars_scan = pre_obs.get('chars')
@@ -222,53 +226,74 @@ class KGPathState:
             self._prev_chars = post_obs.get('chars')
             return 0.0
 
-        src, rel, dst = self.path[self.current_step]
-        detection     = EDGE_DETECTION.get(rel, 'glyph_decrease')
-        traversed     = False
-
         # 更新 key 最后可见坐标（在做检测前先记录，以便遮挡兜底使用）
-        if dst == 'key':
-            pre_chars_arr = pre_obs.get('chars')
-            if pre_chars_arr is not None:
-                key_char_set = NODE_TO_CHAR.get('key', set())
-                for rr in range(pre_chars_arr.shape[0]):
-                    for cc in range(pre_chars_arr.shape[1]):
-                        if pre_chars_arr[rr, cc] in key_char_set:
-                            self._last_key_obs_pos = (rr, cc)
-                            break
-
-        if detection == 'glyph_decrease':
-            traversed = self._glyph_decreased(pre_obs, post_obs, dst)
-
-        # 遮挡兜底：agent 站在 key 上时 pre_count/post_count 均为 0，导致 glyph_decrease 漏判
-        # 条件：1) 主检测未通过  2) 目标节点是 key  3) 执行的是拾取类 option
-        #       4) 本 episode 曾见过 key（_last_key_obs_pos 不为 None）
-        #       5) option 结束后 key 已消失
-        if not traversed and dst == 'key' and self._last_key_obs_pos is not None:
-            is_pickup = any(kw in option_name.lower() for kw in ('findkey', 'pickup'))
-            if is_pickup:
-                pre_blstats = pre_obs.get('blstats')
-                if pre_blstats is not None:
-                    agent_pos = (int(pre_blstats[1]), int(pre_blstats[0]))
-                    if agent_pos == self._last_key_obs_pos:
-                        post_chars_arr = post_obs.get('chars')
-                        if post_chars_arr is not None:
-                            post_key_count = sum(
-                                int(np.sum(post_chars_arr == c))
-                                for c in NODE_TO_CHAR.get('key', set())
-                            )
-                            if post_key_count == 0:
-                                traversed = True
+        pre_chars_arr = pre_obs.get('chars')
+        if pre_chars_arr is not None:
+            key_char_set = NODE_TO_CHAR.get('key', set())
+            for rr in range(pre_chars_arr.shape[0]):
+                for cc in range(pre_chars_arr.shape[1]):
+                    if pre_chars_arr[rr, cc] in key_char_set:
+                        self._last_key_obs_pos = (rr, cc)
+                        break
 
         intr_r = 0.0
-        if traversed:
-            self._episode_traversed.append(self.current_step)   # record before increment
+
+        # ── 多边扫描循环 ────────────────────────────────────────────────────────
+        # 在同一对 (pre_obs, post_obs) 上持续检测当前边，直到某条边未穿越为止。
+        # 这处理了多步同时发生的情况（如 MiniHack 拾 key 时门自动打开）。
+        while self.current_step < len(self.path):
+            src, rel, dst = self.path[self.current_step]
+            detection     = EDGE_DETECTION.get(rel, 'glyph_decrease')
+            traversed     = False
+
+            if detection == 'auto':
+                # State/consequence node: fires automatically once the previous
+                # edge has been traversed (i.e., we've advanced to this step).
+                # Example: door→open fires as a chain from the door edge.
+                traversed = True
+
+            elif detection == 'glyph_decrease':
+                traversed = self._glyph_decreased(pre_obs, post_obs, dst)
+
+                # Verify pickup via inventory: chars[] hides '(' under '@' when
+                # the agent merely steps on the key without picking it up.
+                if traversed and dst == 'key':
+                    post_inv = post_obs.get('inv_letters')
+                    if post_inv is not None:
+                        traversed = bool(post_inv[0])
+
+
+            # 遮挡兜底：agent 站在 key 上时 pre_count/post_count 均为 0，导致 glyph_decrease 漏判
+            if not traversed and dst == 'key' and self._last_key_obs_pos is not None:
+                is_pickup = any(kw in option_name.lower() for kw in ('findkey', 'pickup'))
+                if is_pickup:
+                    pre_blstats = pre_obs.get('blstats')
+                    if pre_blstats is not None:
+                        agent_pos = (int(pre_blstats[1]), int(pre_blstats[0]))
+                        if agent_pos == self._last_key_obs_pos:
+                            post_chars_arr = post_obs.get('chars')
+                            post_inv       = post_obs.get('inv_letters')
+                            key_in_inv     = bool(post_inv[0]) if post_inv is not None else True
+                            if post_chars_arr is not None and key_in_inv:
+                                post_key_count = sum(
+                                    int(np.sum(post_chars_arr == c))
+                                    for c in NODE_TO_CHAR.get('key', set())
+                                )
+                                if post_key_count == 0:
+                                    traversed = True
+
+            if not traversed:
+                break   # 当前边未穿越 → 停止扫描
+
+            # ── 边已穿越 ────────────────────────────────────────────────────────
+            self._episode_traversed.append(self.current_step)
             self.current_step += 1
-            intr_r = self.node_probs.get(dst, 0.0) * self.eta
-            if intr_r > 0:
+            step_r  = self.node_probs.get(dst, 0.0) * self.eta * kg_decay
+            intr_r += step_r
+            if step_r > 0:
                 print(f"  [KG✓] Edge traversed: {src} -[{rel}]-> {dst}  "
                       f"| step={self.current_step}/{len(self.path)}"
-                      f"  intr_r={intr_r:.4f}")
+                      f"  intr_r={step_r:.4f}  kg_decay={kg_decay:.3f}")
 
         self._prev_chars = post_obs.get('chars')
         return intr_r
